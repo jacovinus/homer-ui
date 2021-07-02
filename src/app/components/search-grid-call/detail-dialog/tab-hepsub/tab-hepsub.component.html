@@ -8,7 +8,7 @@
 
   <mat-tab *ngFor="let item of subTabList" (click)="onTabClick(item.uuid, item.type)" [label]="'HEPSUB:' + item.title">
 
-    <br>
+  
     <div *ngIf="isDownload" class="divTableCell">
       <div class="divTable">
         <div class="divTableBody">
@@ -26,8 +26,16 @@
         </div>
       </div>
     </div>
-    <br>
-    <ngx-json-viewer [json]="jsonData" [expanded]="true"></ngx-json-viewer>
+<div *ngIf="jsonData">
+  <div class="json-display">
+    <ngx-json-viewer [json]="jsonData" [expanded]="false"></ngx-json-viewer>
+
+  </div>
+</div>
+
+
+  
+   
 
   </mat-tab>
 

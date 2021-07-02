@@ -1,3 +1,8 @@
+.type-selector-radio {
+    display: flex;
+    flex-direction: column;
+    margin: 15px 0;
+}
 .chack-list {
     margin-right: 1.3rem;
 }
@@ -12,11 +17,10 @@
 .example-container {
     display: flex;
     flex-direction: column;  
-    & > * {
-        width: 100%;
-    }
-    .example-list .pos-sticky {
-        position: sticky;
-        top: 0;
-    }
+   & > * {
+    width: 100%;
+  }
+} 
+mat-form-field {
+    width: 100%;
 }

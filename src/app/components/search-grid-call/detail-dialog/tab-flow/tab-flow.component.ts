@@ -73,8 +73,6 @@ export class TabFlowComponent implements OnInit, AfterViewInit, OnDestroy {
         }
         this._isSimplifyPort = filters.isSimplifyPort;
         this._isCombineByAlias = filters.isCombineByAlias;
-
-        // console.log({filters});
         setTimeout(this.initData.bind(this));
     }
 
@@ -117,6 +115,7 @@ export class TabFlowComponent implements OnInit, AfterViewInit, OnDestroy {
         return (this.isSimplify ? 150 : 200) * this.flowGridLines.length;
     }
     @Output() messageWindow: EventEmitter<any> = new EventEmitter();
+    @Output() pngReady: EventEmitter<any> = new EventEmitter();
 
     @ViewChild('flowpage', { static: true }) flowpage: ElementRef;
     @ViewChild('flowscreen', { static: true }) flowscreen: ElementRef;
@@ -314,16 +313,18 @@ export class TabFlowComponent implements OnInit, AfterViewInit, OnDestroy {
             arr[positionIPs[ip]] = this.aliasTitle.find(i => i.ip === ip || i.shortIPtext1 === ip);
             return arr;
         }, []);
-        if (this._isCombineByAlias && this._isSimplifyPort) {
+        if (this._isCombineByAlias && this._isSimplifyPort && this.aliasTitle) {
             this.aliasTitle = this.aliasTitle.reduce((arr, b) => {
-                if (b.arrip === undefined) {
-                    b.arrip = [b.ip.replace(/\[|\]/g, '')];
-                }
-                const el = arr.find(k => k.alias === b.alias || k.ip === b.ip);
-                if (el) {
-                    el.arrip.push(b.ip.replace(/\[|\]/g, ''));
-                } else {
-                    arr.push(b);
+                if (b) {
+                    if (b.arrip === undefined) {
+                        b.arrip = [b.ip.replace(/\[|\]/g, '')];
+                    }
+                    const el = arr.find(k => k.alias === b.alias || k.ip === b.ip);
+                    if (el) {
+                        el.arrip.push(b.ip.replace(/\[|\]/g, ''));
+                    } else {
+                        arr.push(b);
+                    }
                 }
                 return arr;
             }, []);
@@ -416,6 +417,9 @@ export class TabFlowComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     onClickItem(item: any, event = null) {
+        if (!item) {
+            return;
+        }
         if (item.source_data.QOS) {
             const rtpROW: any = Object.assign({
                 typeItem: 'RTP',
@@ -490,6 +494,9 @@ export class TabFlowComponent implements OnInit, AfterViewInit, OnDestroy {
                 this.downloadLink.nativeElement.href = canvas.toDataURL('image/png');
                 this.downloadLink.nativeElement.download = `${this.callid}.png`;
                 this.downloadLink.nativeElement.click();
+                setTimeout(() => {
+                    this.pngReady.emit({});
+                }, 100);
             });
         }
     }

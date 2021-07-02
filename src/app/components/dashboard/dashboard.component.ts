@@ -13,7 +13,7 @@ import {
 import { GridsterConfig, GridType } from 'angular-gridster2';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DashboardModel, DashboardContentModel } from '@app/models';
-import { DashboardService } from '@app/services';
+import { AuthenticationService, DashboardService } from '@app/services';
 import { MatDialog } from '@angular/material/dialog';
 import { DeleteDialogComponent } from './delete-dialog/delete-dialog.component';
 import { AddDialogComponent } from './add-dialog/add-dialog.component';
@@ -24,6 +24,7 @@ import { WidgetArray, WidgetArrayInstance } from '@app/helpers/widget';
 import { Functions } from '@app/helpers/functions';
 import { DateTimeRangeService, DateTimeTick, Timestamp } from '@app/services/data-time-range.service';
 import { ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { UserSecurityService } from '@app/services/user-security.service';
 
 @Component({
     selector: 'app-dashboard',
@@ -46,6 +47,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     params: any;
     timeRange: Timestamp;
 
+    gridLocked = false;
+    isDashboardUpdate = true;
+    isDashboardDelete = true;
+    isShared = false;
+    isSharedOwner = false;
+
     @ViewChildren('widgets') widgets: QueryList<IWidget>;
     @ViewChild('customWidget', {static: false}) customWidget: any;
 
@@ -55,6 +62,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         private router: Router,
         private cdr: ChangeDetectorRef,
         private _dtrs: DateTimeRangeService,
+        private userSecurityService: UserSecurityService,
+        private authenticationService: AuthenticationService,
         public dialog: MatDialog) {}
     @HostListener('document:keydown', ['$event']) onKeydownHandler(event: KeyboardEvent) {
         const ls = JSON.parse(localStorage.getItem('searchQueryWidgetsResult'));
@@ -100,7 +109,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             refresh: '1h',
             from: 'now-5m', // 'now-5m',
             to: 'now', // 'now'
-        }
+        };
         // Grid options
         this.gridOptions = {
             gridType: GridType.Fit,
@@ -180,6 +189,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         let columnRes: number;
         let rowRes: number;
         const grid = document.getElementById('gridster');
+        if (typeof grid === 'undefined' || grid === null) {
+            return;
+        }
         if (this.dashboardCollection.data.config !== undefined) {
             columnRes = grid.getBoundingClientRect().width / this.dashboardCollection.data.config.columns;
             rowRes = grid.getBoundingClientRect().height / this.dashboardCollection.data.config.maxrows;
@@ -266,10 +278,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 i.onmousedown = evt => shadows.forEach( (j: any) => j.style.display = 'block' );
             });
             this.cdr.detectChanges();
-        }, 500);
+        },  100);
     }
 
     getData() {
+        (async () => {
+            this.isDashboardUpdate = await this.userSecurityService.isDashboardUpdate();
+            this.isDashboardDelete = await this.userSecurityService.isDashboardDelete();
+            this.cdr.detectChanges();
+        })();
         this._route.params.subscribe(async (params) => {
             this._ds.setCurrentDashBoardId(params['id']);
             this.isHome = params['id'] === 'home';
@@ -279,6 +296,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             this.dashboardCollection = dashboard;
 
+            this.isShared = dashboard.data.shared && dashboard.owner !== this.authenticationService.getUserName();
+            this.isSharedOwner = dashboard.data.shared && dashboard.owner === this.authenticationService.getUserName();
             this.isIframe = this.dashboardCollection.data.type === 2;
             if (this.isIframe) {
                 this.subscription = this._dtrs.castRangeUpdateTimeout.subscribe((dtr: DateTimeTick) => {
@@ -289,7 +308,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                     this.buildUrl();
 
                 });
-                if (!this.dashboardCollection.data.config.grafanaTimestamp){
+                if (!this.dashboardCollection.data.config.grafanaTimestamp) {
                     this.iframeUrl = this.dashboardCollection.data.param;
                 }
             }
@@ -332,6 +351,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             this.dashboardCollection.data.widgets.forEach(item =>
                 item.strongIndex = item.strongIndex || this.getWidgetItemClass(item).strongIndex);
             this._ds.setWidgetListCurrentDashboard(this.dashboardCollection.data.widgets);
+
+            if (this.isShared) {
+                this.lockDashboard();
+            }
             this.updateTrigger();
             this.changedOptions();
             this.scrollTop();
@@ -339,12 +362,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         });
     }
     buildUrl(noCache: boolean = false) {
-        if (this.dashboardCollection.data.param === ''  || typeof this.dashboardCollection.data.param === undefined 
+        if (this.dashboardCollection.data.param === '' || typeof this.dashboardCollection.data.param === undefined
             || this.dashboardCollection.data.param === null || !this.dashboardCollection.data.config.grafanaTimestamp) {
             return;
         }
-        const cleanedURL = this.dashboardCollection.data.param.replace(/&from=\d*/, '').replace(/&to=\d*/, '')
-        this.iframeUrl = [cleanedURL, Object.keys(this.params).map(i => `${i}=${this.params[i]}`).join('&')].join('?');
+        this.iframeUrl = this.dashboardCollection.data.param;
+        if (/from=\d+/.test(this.iframeUrl)) {
+            this.iframeUrl = this.iframeUrl.replace(/from=\d+/, `from=${this.params.from}`)
+        }
+        if (/to=\d+/.test(this.iframeUrl)) {
+            this.iframeUrl = this.iframeUrl.replace(/to=\d+/, `to=${this.params.to}`)
+        }
+        this.dashboardCollection.data.param = this.iframeUrl;
+
         this.cdr.detectChanges();
     }
     submitCheck() {
@@ -375,21 +405,74 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     changeCurrent(id: string) {
         const ls = JSON.parse(localStorage.getItem('searchQueryWidgetsResult'));
         let currentWidget: any;
-        if (ls != null && ls.currentWidget !== undefined) {
+        if (ls != null && ls.currentWidget !== undefined && ls.currentWidget !== '') {
             currentWidget = ls.currentWidget;
         } else {
             currentWidget = this._ds.dbs.currentWidget;
         }
-        if (currentWidget.id && id !== currentWidget.id) {
-            for (let i = 0; i < this.submitCheck().length; i++) {
-                if (id === this.submitCheck()[i].id) {
-                    // currentWidget.id
-                    this._ds.setCurrentWidgetId(this.submitCheck()[i]);
-                }
+        if (currentWidget === '' || typeof currentWidget === 'undefined' || (currentWidget.id && id !== currentWidget.id)) {
+            const i = this.submitCheck().findIndex(widget => widget.id === id);
+            if (i === -1) {
+                return;
             }
+            this._ds.setCurrentWidgetId(this.submitCheck()[i]);
             this.save();
         }
     }
+    lockDashboard() {
+
+        if (!this.gridLocked) {
+            this.gridOptions.resizable = {
+                enabled: false
+            };
+
+            this.gridOptions.draggable = {
+                enabled: false,
+                ignoreContent: false,
+                dropOverItems: false,
+                dragHandleClass: '',
+                ignoreContentClass: 'no-drag',
+            };
+
+            this.gridOptions.pushDirections = {
+                east: false,
+                north: false,
+                south: false,
+                west: false
+            };
+            if (!this.isShared) {
+                this.gridLocked = true;
+            }
+            this.gridOptions?.api?.optionsChanged();
+            this.cdr.detectChanges();
+
+        } else if (this.gridLocked) {
+            this.gridOptions.resizable = {
+                enabled: true
+            };
+
+            this.gridOptions.draggable = {
+                enabled: true,
+                ignoreContent: true,
+                dropOverItems: true,
+                dragHandleClass: 'drag-handler',
+                ignoreContentClass: 'no-drag',
+            };
+
+            this.gridOptions.pushDirections = {
+                east: true,
+                north: true,
+                south: true,
+                west: true
+            };
+
+            this.gridLocked = false;
+            this.gridOptions?.api?.optionsChanged();
+            this.cdr.detectChanges();
+        }
+        this.save();
+    }
+
     itemChange(item: any) {
 
         if (item.name === 'iframe') {
@@ -630,6 +713,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     onDashboardSave() {
         this.dashboardCollection.data.widgets = this.dashboardArray;
+        this.dashboardCollection.data.isLocked = this.gridLocked;
 
         const _hash = Functions.md5(JSON.stringify(this.dashboardCollection));
 
@@ -640,7 +724,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         this.postSaveHash = _hash;
         this._ds.setWidgetListCurrentDashboard(this.dashboardCollection.data.widgets);
 
-        return this._ds.postDashboardStore(this._ds.getCurrentDashBoardId(), this.dashboardCollection.data);
+        return this._ds.updateDashboard(this.dashboardCollection.data);
     }
 
     ngOnDestroy() {

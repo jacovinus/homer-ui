@@ -103,6 +103,7 @@ import {
     TabLokiComponent,
     TabMessagesComponent,
     TabQosComponent,
+    ExportDialogComponent
 } from '@app/components/search-grid-call';
 
 import { MenuComponent } from '@app/components/menu/menu.component';
@@ -120,6 +121,7 @@ import { MarkdownModule } from 'ngx-markdown';
 import { ColorChromeModule } from 'ngx-color/chrome';
 import { ColorCircleModule } from 'ngx-color/circle';
 import { TableVirtualScrollModule } from 'ng-table-virtual-scroll';
+import { FlowItemComponent } from './components/search-grid-call/detail-dialog/tab-flow/flow-item/flow-item.component';
 
 const DEFAULT_ACE_CONFIG: AceConfigInterface = {
 };
@@ -161,11 +163,13 @@ const DEFAULT_ACE_CONFIG: AceConfigInterface = {
         TabExportComponent,
         TabCallinfoComponent,
         TabFlowComponent,
+        FlowItemComponent,
         TabHepsubComponent,
         TabLogsComponent,
         TabLokiComponent,
         TabMessagesComponent,
         TabQosComponent,
+        ExportDialogComponent,
 
         /** widgets */
         AceEditorWidgetComponent,
